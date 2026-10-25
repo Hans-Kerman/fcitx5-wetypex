@@ -73,6 +73,22 @@ pw-record --rate 16000 --channels 1 --format s16 /tmp/wetypex-test.wav
 
 录制几秒后按 `Ctrl+C`，确认 WAV 非空。随后运行 `fcitx5-wetypex-voice status`，检查 `native_ready`、`vad`、`state` 和时间字段。录音错误见 `state/voice/capture.log`，原版宿主错误见 `state/voice/backend.log`。识别需要联网；首次使用会初始化设备身份。编码和分块由原版引擎完成，FFmpeg 仅用于已有音频文件的解码。原版 VAD 模型可用 `--icons-only` 更新，具体操作见[流式语音输入](voice-input.md)。
 
+## 输入框周期性失焦，候选框消失并留下拼音
+
+Ubuntu 26.04、Plasma/KWin 6.6.6、wl-clipboard 2.2.1 下曾观察到，设备剪贴板同步轮询时 `wl-paste` 的临时窗口获得焦点，打断未完成的拼音；普通 Fcitx 拼音和浏览器也会受影响。旧版 wl-clipboard 只支持 `wlr-data-control`，而部分 KWin 版本只公布 `ext-data-control`；wl-clipboard 从 2.3 开始支持后者。只在日志里看到 `data_control` 字样不足以确认两者兼容。
+
+同步守护进程通过剪贴板助手查询 Wayland registry，再核对 `wl-paste`、`wl-copy` 的版本。探测只列举协议，不读取剪贴板、不创建窗口。兼容时继续使用原生 Wayland；缺少共同协议或连接状态不明时，通过 Qt/XWayland 无窗口读写。无窗口连接失败会跳过本轮并稍后重试，不退回可能抢焦点的 `wl-paste`/`wl-copy`。X11 连接使用 `DISPLAY` 和实际可用的认证配置，也支持未显式设置 `XAUTHORITY` 的会话。 文字读取优先选择 UTF-8 格式；同步进程管理的剪贴板助手会持续持有内容，直到所有权被替换或同步进程退出。
+
+可单独查看当前桌面的协议（空输出表示未公布支持的 data-control 协议）：
+
+```bash
+fcitx5-wetypex-clipboard-set --wayland-clipboard-protocols
+wl-paste --version
+wl-copy --version
+```
+
+升级后需要让旧的 `fcitx5-wetypex-syncd` 进程退出并启动新版本。KDE Wayland 可保存工作后注销并重新登录；只重新加载配置不一定会替换仍在运行的旧同步进程。重新测试时，在浏览器或编辑器中输入拼音、等待至少 10 秒，确认焦点和候选框保持。
+
 ## Electron 在 Wayland 下候选框固定在左上角
 
 先在同一个应用中对照 Fcitx 拼音，并确认 KDE“系统设置 → 键盘 → 虚拟键盘”选择了 Fcitx5。WeTypeX 使用 Fcitx 的面板定位；客户端提供的输入表面和光标矩形决定面板位置。
